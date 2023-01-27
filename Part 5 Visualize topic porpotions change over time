@@ -1,0 +1,161 @@
+#Part 5 Visualize topic porpotions change over time
+#import library
+import requests
+import re
+from bs4 import BeautifulSoup
+import pandas as pd
+import numpy as np
+import gensim
+import gensim.corpora as corpora
+from gensim import models
+import matplotlib.pyplot as plt
+import spacy
+from pprint import pprint
+from wordcloud import WordCloud
+from mpl_toolkits import mplot3d
+import matplotlib.pyplot as plt
+from gensim.models.coherencemodel import CoherenceModel
+from gensim.models.ldamodel import LdaModel
+from pathlib import Path  
+import csv
+import glob
+import re
+import string
+import sys
+import datetime as dt
+import os
+def main():
+    print("start main")
+    nlp=spacy.load('en_core_web_lg')
+    nlp.max_length=1500000
+
+    ##grab the documents by parsing URLs##
+    #define URLs for the specific FOMC minutes
+    URLPath=r'https://www.federalreserve.gov/monetarypolicy/fomcminutes'
+    URLExt=r'.htm'  
+    Minuteslist1=[ 
+        '20090128', '20090318', '20090429', '20090624', '20090812', '20090923', '20091104', '20091216', # 2009 FOMC minutes 
+        '20100127', '20100316', '20100428', '20100623', '20100810', '20100921', '20101103', '20101214', # 2010 FOMC minutes 
+        '20110126', '20110315', '20110427', '20110622', '20110809', '20110921', '20111102', '20111213', # 2011 FOMC minutes 
+        '20120125', '20120313', '20120425', '20120620', '20120801', '20120913', '20121024', '20121212', # 2012 FOMC minutes 
+        '20130130', '20130320', '20130501', '20130619', '20130731', '20130918', '20131030', '20131218', # 2013 FOMC minutes 
+        '20140129', '20140319', '20140430', '20140618', '20140730', '20140917', '20141029', '20141217', # 2014 FOMC minutes
+        '20150128', '20150318', '20150429', '20150617', '20150729', '20150917', '20151028', '20151216', # 2015 FOMC minutes    
+        '20160127', '20160316', '20160427', '20160615', '20160727', '20160921', '20161102', '20161214', # 2016 FOMC minutes
+        '20170201', '20170315', '20170503', '20170614', '20170726', '20170920', '20171101', '20171213', # 2017 FOMC minutes
+        '20180131', '20180321', '20180502', '20180613', '20180801', '20180926', '20181108', '20181219', # 2018 FOMC minutes
+        '20190130', '20190320', '20190501', '20190619', '20190731', '20190918', '20191030', '20191211', # 2019 FOMC minutes
+        '20200129', '20200315', '20200429', '20200610', '20200729','20200916','20201105','20201216' ,# 2020 FOMC minutes
+        '20210127','20210317','20210428','20210616','20210728','20210922','20211103','20211215',#2021 FOMC minutes
+        '20220126','20220504','20220316']#2022 FOMC minutes
+
+
+ 
+   
+    ##SETTING UP THE CORPUS##
+    FOMCMinutes=[]#A list of lists to form the corpus
+    FOMCTopix=[]#list to store minutes ID(date) and weight of each para
+
+
+    #Define function to prepare corpus
+    print("start prepare Corpus")
+    def Preparetext(urlpath,urlext,minslist1,minparalength):
+        fomcmins=[]
+        fomctopix=[]
+        fomcdate=[]
+    
+        
+
+        for minutes in minslist1:
+
+            response=requests.get(urlpath+minutes+urlext)#get the URL response
+            soup=BeautifulSoup(response.content,'lxml')#parse the response
+            #extract minutes content and convert to string
+            minsTxt=str(soup.find("div",{"id":"content"}))#containted within the 'div' tag
+
+            #Clean text- stage1
+            minsTxt=minsTxt.strip() #remove white spcace at the beginning and end
+            minsTxt=minsTxt.replace('\r','')#replace the \r with null
+            minsTxt=minsTxt.replace(' ',' ')#replace space with ' '这个地方不大会，存疑
+            while '  ' in minsTxt:
+                minsTxt=minsTxt.replace('  ',' ')#remove extra spaces
+            #Clean text-stage 2,using regex(as SpaCy incorrectly parses certain HTML tags)
+            minsTxt = re.sub(r'(<[^>]*>)|' # Remove content within HTML tags
+                        '([_]+)|' # Remove series of underscores
+                        '(http[^\s]+)|' # Remove website addresses
+                        'a.'
+                        'i.'
+                        '((a|p)\.m\.)', # Remove "a.m" and "p.m."
+                        '', minsTxt) # Replace with null
+            
+            #Find length of minutes document for calculating paragraph weights 
+            minsTxtParas=minsTxt.split('\n')#list of paras in minsTxt,where m/insTxt is split based on new line characters
+            cum_paras=0#set up variables for cumulative word-count in all paras for a given transcript 
+         
+            for para in minsTxtParas:
+                if len(para)>minparalength:#Only including paragraphs larger than 'minparalength'
+                    cum_paras +=len(para)
+
+            #Extract paragraphs
+            for para in minsTxtParas:
+                if len(para)>minparalength:#Only extract paragraphs larger than 'minparalength'
+
+                    topixTmp=[]#Temporary list to store minutes data &para weight tuple
+                    date=[]#temporary list to sotre miunutes date
+                    topixTmp.append(minutes)#First element of tuple (minutes data)
+                    date.append(minutes)
+                    topixTmp.append(len(para)/cum_paras)#Second element of tuple (para weight), NB.Calculating weights based on pre-SpaCy-parsed text
+                    #Parse cleaned para with SpaCy
+                    minsPara=nlp(para)
+                    minsTmp=[]#temporary list to store individual tokens
+                    #Further cleaning and selection of text characteristics
+                    # Further cleaning and selection of text characteristics
+                    for token in minsPara:
+                        if token.is_stop == False and token.is_punct == False and (token.pos_ == "NOUN" or token.pos_ == "ADJ" or token.pos_ =="VERB"): # Retain words that are not a stop word nor punctuation, and only if a Noun, Adjective or Verb
+                            minsTmp.append(token.lemma_.lower()) # Convert to lower case and retain the lemmatized version of the word (this is a string object)
+                           
+            
+
+                    fomcmins.append(minsTmp) # Add para to corpus 'list of lists'
+                    fomctopix.append(topixTmp) # Add minutes date & para weight tuple to list for storing
+                   
+      
+        return fomcmins, fomctopix, fomcdate
+
+    FOMCMinutes, FOMCTopix,DATE= Preparetext(urlpath=URLPath,urlext=URLExt, minslist1=Minuteslist1, minparalength=200)
+    
+     ##Numeric representation of corpus using TF-IDF##
+    #Form dictionary by mapping word IDs to words
+    ID2word=corpora.Dictionary(FOMCMinutes)
+
+    # Set up Bag of Words 
+    print("set up bag of words")
+    corpus = [ID2word.doc2bow(doc) for doc in FOMCMinutes] # Apply Bag of Words to all documents in corpus
+
+
+    NUM_topics = 8 # Set number of topics
+    ETA=0.2
+    SEED=85
+    ALPHA=1.25
+
+    # Train LDA model using the corpus
+    lda_model = gensim.models.LdaMulticore(corpus=corpus, num_topics=NUM_topics, id2word=ID2word, random_state=SEED, alpha=ALPHA, eta=ETA, passes=100)
+    
+    para_no = 0 # Set document counter
+    for para in FOMCTopix:
+        corpus_para = corpus[para_no]
+    # Generate and store weighted topic proportions for each para
+        for topic_weight in lda_model.get_document_topics(corpus_para): # List of tuples ("topic number", "topic proportion") for each para, where 'topic_weight' is the (iterating) tuple
+            FOMCTopix[para_no].append(FOMCTopix[para_no][1]*topic_weight[1]) # Weights are the second element of the pre-appended list, topic proportions are the second element of each tuple
+        para_no += 1
+
+    # Form dataframe of weighted topic proportions (paragraphs) - include any chosen topic names
+    FOMCTopixDF = pd.DataFrame(FOMCTopix, columns=['Date', 'Weight', 'Market1', 'Inflation ', 'Market2', 'Monetary Policy', 'Consumption', 'Foreign Economy', 'Financial Stability', 'Economic Growth'])
+
+    # Aggregate topic mix by minutes documents (weighted sum of paragraphs)
+    TopixAggDF = pd.pivot_table(FOMCTopixDF, values=['Market1','Inflation ', 'Market2', 'Monetary Policy', 'Consumption', 'Foreign Economy', 'Financial Stability', 'Economic Growth'], index='Date', aggfunc=np.sum)
+    TopixAggDF.plot(y=['Consumption', 'Foreign Economy', 'Financial Stability', 'Economic Growth'], kind='line',use_index=True)
+    plt.legend(loc='upper right')
+    plt.show()
+if __name__ == '__main__':
+    main()
