@@ -1,0 +1,23 @@
+
+#Part 4. combine all the parse files 
+
+
+def main():
+
+
+
+    combined_csv=pd.DataFrame()
+    for i in range(1,8):
+        filenames=Path(r'C:\Users\Rico\Desktop\Warwick\dissertation\Python\NewversionMinutes/'+'/parse_'+str(i)+'.csv')
+        combined_csv = pd.concat( [combined_csv,pd.read_csv(filenames)], axis=0, ignore_index=True)
+
+    Score_Negative=combined_csv.groupby(['Topics','Date'])['Score_Negative'].sum()
+    Score_Positive=combined_csv.groupby(['Topics','Date'])['Score_Positive'].sum()
+    Score_Uncertainty=combined_csv.groupby(['Topics','Date'])['Score_Uncertainty'].sum()
+   
+    Score_Negative.to_csv(r'C:\Users\Rico\Desktop\Warwick\dissertation\Python\NewversionMinutes\Score_Negative.csv')
+    Score_Positive.to_csv(r'C:\Users\Rico\Desktop\Warwick\dissertation\Python\NewversionMinutes\Score_Positive.csv')
+    Score_Uncertainty.to_csv(r'C:\Users\Rico\Desktop\Warwick\dissertation\Python\NewversionMinutes\Score_Uncertainty.csv')
+
+if __name__ == '__main__':
+    main()
